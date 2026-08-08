@@ -1,0 +1,1129 @@
+---
+title: "Hasil"
+author: "Alya Nurhaliza"
+date: "2025-02-16"
+output: html_document
+---
+
+```{r}
+library(readxl)
+library(ggplot2)
+```
+
+## **Menginput data Laki-laki**
+```{r}
+datal <- read_excel("C:/Users/LENOVO/Documents/Semester 7/TA SHALALLAHU ALA MUHAMMAD/Data.xlsx", sheet = "Laki-laki")
+str(datal)
+```
+
+```{r}
+xl <- datal$x
+qxl <- datal$qx
+pxl <- 1 - datal$qx
+head(pxl)
+```
+
+## **Menginput data Perempuan**
+```{r}
+datap <- read_excel("C:/Users/LENOVO/Documents/Semester 7/TA SHALALLAHU ALA MUHAMMAD/Data.xlsx", sheet = "Perempuan")
+str(datap)
+```
+
+```{r}
+xp <- datap$x
+qxp <- datap$qx
+pxp <- 1 - datap$qx
+head(pxp)
+```
+
+
+## **Iterasi Metode Gompertz OLS dengan Metode Secant**
+```{r}
+S_function1 <- function(B, C, x) {
+  exp(-B * C^x / log(C) * (C - 1))
+}
+```
+
+```{r}
+
+F11 <- function(B, C, Y, x, N) {
+  S <- S_function1(B, C, x)
+  sum(2 * (Y - S) * (C^x * (C - 1) / log(C)) * S)
+}
+```
+
+```{r}
+F12 <- function(B, C, Y, x, N) {
+  S <- S_function1(B, C, x)
+  sum(2 * (Y - S) * (-B * C^(x-1) * ((C-1) + (x + C) * log(C)) / (log(C)^2)) * S)
+}
+```
+
+```{r}
+secant_method1 <- function(Y, x, B0, C0, B1, C1, tol = 1e-5, max_iter = 1000) {
+  iter <- 0
+  
+  while (iter < max_iter) {
+    if (C1 <= 1) {
+      warning("C mendekati atau kurang dari 1")
+      break
+    }
+    
+    F1_1 <- F11(B1, C1, Y, x, length(Y))
+    F2_1 <- F12(B1, C1, Y, x, length(Y))
+    
+    F1_0 <- F11(B0, C0, Y, x, length(Y))
+    F2_0 <- F12(B0, C0, Y, x, length(Y))
+    
+    if (is.nan(F1_1) || is.nan(F2_1) || is.infinite(F1_1) || is.infinite(F2_1)) {
+      warning("Fungsi menghasilkan NaN atau Inf. Coba nilai awal lain.")
+      return(NULL)
+    }
+    
+    if ((F1_1 - F1_0) == 0 || (F2_1 - F2_0) == 0) {
+      warning("Denominator nol, coba nilai awal lain.")
+      return(NULL)
+    }
+    
+    B_new <- B1 - (B1 - B0) / (F1_1 - F1_0) * F1_1
+    C_new <- C1 - (C1 - C0) / (F2_1 - F2_0) * F2_1
+    
+    if (B_new <= 0 || C_new <= 1) {
+      warning("Nilai B atau C tidak valid.")
+      return(NULL)
+    }
+    
+    if (abs(B_new - B1) < tol && abs(C_new - C1) < tol) {
+      cat("Konvergen: B =", B_new, ", C =", C_new, "\n")
+      return(list(B = B_new, C = C_new, iter = iter))
+    }
+    
+    B0 <- B1
+    C0 <- C1
+    B1 <- B_new
+    C1 <- C_new
+    
+    iter <- iter + 1
+  }
+  
+  warning("Tidak ditemukan solusi yang valid setelah", max_iter, "iterasi.")
+  return(NULL)
+}
+```
+
+```{r}
+tracking1 <- function(Y, x, B0, C0, B1, C1, tol = 1e-5, max_iter = 1000) {
+  iter <- 0
+  history <- data.frame(iter = integer(), B = numeric(), C = numeric(), MSE = numeric(), 
+                        abs_dB = numeric(), abs_dC = numeric())
+  
+  while (iter < max_iter) {
+    if (C1 <= 1) {
+      warning("C mendekati atau kurang dari 1")
+      break
+    }
+    
+    F1_1 <- F11(B1, C1, Y, x)
+    F2_1 <- F12(B1, C1, Y, x)
+    
+    F1_0 <- F11(B0, C0, Y, x)
+    F2_0 <- F12(B0, C0, Y, x)
+    
+    if (is.nan(F1_1) || is.nan(F2_1) || is.infinite(F1_1) || is.infinite(F2_1)) {
+      warning("Fungsi menghasilkan NaN atau Inf. Coba nilai awal lain.")
+      return(NULL)
+    }
+    
+    if ((F1_1 - F1_0) == 0 || (F2_1 - F2_0) == 0) {
+      warning("Denominator nol, coba nilai awal lain.")
+      return(NULL)
+    }
+    
+    B_new <- B1 - (B1 - B0) / (F1_1 - F1_0) * F1_1
+    C_new <- C1 - (C1 - C0) / (F2_1 - F2_0) * F2_1
+    
+    if (B_new <= 0 || C_new <= 1) {
+      warning("Nilai B atau C tidak valid.")
+      return(NULL)
+    }
+    
+    # Hitung estimasi yduga dan MSE
+    yduga <- 1 - exp(((-B_new * C_new^x) / log(C_new)) * (C_new - 1))
+    mse <- sum((datal$qx - yduga)^2) / length(datal$qx)
+    
+    # Hitung selisih absolut antara iterasi sebelumnya dan saat ini
+    abs_dB <- abs(B_new - B1)
+    abs_dC <- abs(C_new - C1)
+    
+    # Simpan hasil iterasi ke dalam dataframe tanpa abs_F1 dan abs_F2
+    history <- rbind(history, data.frame(iter = iter, B = B_new, C = C_new, MSE = mse, 
+                                         abs_dB = abs_dB, abs_dC = abs_dC))
+    
+    if (abs_dB < tol && abs_dC < tol) {
+      cat("Konvergen pada iterasi ke-", iter, "\n")
+      return(history)
+    }
+    
+    B0 <- B1
+    C0 <- C1
+    B1 <- B_new
+    C1 <- C_new
+    
+    iter <- iter + 1
+  }
+  
+  warning("Tidak ditemukan solusi yang valid setelah", max_iter, "iterasi.")
+  return(history)
+}
+```
+
+###  1. Laki-laki
+```{r warning=FALSE}
+hasil11 <- secant_method1(pxl, xl, B0 = 0.03, C0 = 1.07, B1 = 0.05, C1 = 1.01)
+```
+
+```{r}
+print(hasil11)
+
+B11 <- hasil11$B
+c11 <- hasil11$C
+```
+
+```{r}
+yduga11 <- 1 - exp(((-B11*c11^xl)/log(c11))*(c11-1))
+```
+
+#### Nilai MSE 
+```{r}
+mse11 <- sum((datal$qx - yduga11)^2) / length(datal$qx)
+cat("Mean Squared Error (MSE):", mse11, "\n")
+```
+
+```{r}
+history_df1 <- tracking1(pxl, xl, B0 = 0.03, C0 = 1.07, B1 = 0.05, C1 = 1.01)
+
+head(history_df1)
+tail(history_df1)
+```
+
+```{r echo=FALSE}
+df1 <- data.frame(Index = 1:length(datal$qx), 
+                 qx_Obs = datal$qx, 
+                 qx_Estimasi = yduga11)
+
+ggplot(df1, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Gompertz OLS Laki-laki",
+       x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+```
+
+###  2. Perempuan
+```{r warning=FALSE}
+hasil12 <- secant_method1(pxp, xp, B0 = 0.05, C0 = 1.02, B1 = 0.04, C1 = 1.03)
+```
+
+```{r}
+print(hasil12)
+
+B12 <- hasil12$B
+c12 <- hasil12$C
+```
+
+```{r}
+yduga12 <- 1 - exp(((-B12*c12^xl)/log(c12))*(c12-1))
+```
+
+#### Nilai MSE 
+```{r}
+mse12 <- sum((datap$qx - yduga12)^2) / length(datap$qx)
+cat("Mean Squared Error (MSE):", mse12, "\n")
+```
+
+```{r}
+history_df2 <- tracking1(pxp, xp, B0 = 0.05, C0 = 1.02, B1 = 0.04, C1 = 1.03)
+
+head(history_df2)
+tail(history_df2)
+```
+
+```{r echo=FALSE}
+df2 <- data.frame(Index = 1:length(datap$qx), 
+                  qx_Obs = datap$qx, 
+                  qx_Estimasi = yduga12)
+
+ggplot(df2, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Gompertz OLS Perempuan",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+```
+
+## **Iterasi Metode Gompertz WLS dengan Metode Secant**
+```{r}
+n <- length(xl)
+wt1 <- seq(1, n) / (n + 1)
+wt2 <- (seq(1, n) - 0.3) / (n + 0.4)
+wt3 <- (seq(1, n) - 0.5) / n
+wt4 <- sapply(1:n, function(i) sum(1 / (n - (1:i) + 1)))
+```
+
+```{r}
+S_function2 <- function(B, C, x) {
+  exp(-B * C^x / log(C) * (C - 1))
+}
+```
+
+```{r}
+F21 <- function(B, C, Y, x, N, w) {
+  S <- S_function2(B, C, x)
+  sum(2 * w * (Y - S) * (C^x * (C - 1) / log(C)) * S)
+}
+```
+
+```{r}
+F22 <- function(B, C, Y, x, N, w) {
+  S <- S_function2(B, C, x)
+  sum(2 * w * (Y - S) * (-B * C^(x-1) * ((C-1) + (x + C) * log(C)) / (log(C)^2)) * S)
+}
+```
+
+```{r}
+secant_method2 <- function(Y, x, B0, C0, B1, C1, w, tol = 1e-5, max_iter = 1000) {
+  iter <- 0
+  
+  while (iter < max_iter) {
+    if (C1 <= 1 || B1 <= 0) {
+      warning("Nilai B atau C tidak valid. Coba nilai awal lain.")
+      return(NULL)
+    }
+    
+    F1_1 <- F21(B1, C1, Y, x, length(Y), w)
+    F2_1 <- F22(B1, C1, Y, x, length(Y), w)
+    
+    F1_0 <- F21(B0, C0, Y, x, length(Y), w)
+    F2_0 <- F22(B0, C0, Y, x, length(Y), w)
+    
+    if (is.nan(F1_1) || is.nan(F2_1) || is.infinite(F1_1) || is.infinite(F2_1)) {
+      warning("Fungsi menghasilkan NaN atau Inf. Coba nilai awal lain.")
+      return(NULL)
+    }
+    
+    if ((F1_1 - F1_0) == 0 || (F2_1 - F2_0) == 0) {
+      warning("Denominator nol, coba nilai awal lain.")
+      return(NULL)
+    }
+    
+    B_new <- B1 - (B1 - B0) / (F1_1 - F1_0) * F1_1
+    C_new <- C1 - (C1 - C0) / (F2_1 - F2_0) * F2_1
+    
+    if (B_new <= 0 || C_new <= 1) {
+      warning("Nilai B atau C tidak valid.")
+      return(NULL)
+    }
+    
+    if (abs(B_new - B1) < tol && abs(C_new - C1) < tol) {
+      cat("Konvergen: B =", B_new, ", C =", C_new, "\n")
+      return(list(B = B_new, C = C_new, iter = iter))
+    }
+    
+    B0 <- B1
+    C0 <- C1
+    B1 <- B_new
+    C1 <- C_new
+    
+    iter <- iter + 1
+  }
+  
+  warning("Tidak ditemukan solusi yang valid setelah", max_iter, "iterasi.")
+  return(NULL)
+}
+```
+
+###  1. Laki-laki
+```{r warning=FALSE}
+hasil211 <- secant_method2(pxl, xl, B0 = 0.01, B1 =0.02, C0 = 1.09, C1 = 1.03, w = wt1)
+hasil212 <- secant_method2(pxl, xl, B0 = 0.02, B1 =0.01, C0 = 1.08, C1 = 1.02, w = wt2)
+hasil213 <- secant_method2(pxl, xl, B0 = 0.05, B1 =0.03, C0 = 1.01, C1 = 1.02, w = wt3)
+hasil214 <- secant_method2(pxl, xl, B0 = 0.05, B1 =0.02, C0 = 1.07, C1 = 1.03, w = wt4)
+```
+
+```{r}
+print(hasil211)
+print(hasil212)
+print(hasil213)
+print(hasil214)
+```
+
+```{r}
+B211 <- hasil211$B
+c211 <- hasil211$C
+
+B212 <- hasil212$B
+c212 <- hasil212$C
+
+B213 <- hasil213$B
+c213 <- hasil213$C
+
+B214 <- hasil214$B
+c214 <- hasil214$C
+```
+
+```{r}
+yduga211 <- 1 - exp(((-B211*c211^xl)/log(c211))*(c211-1))
+yduga212 <- 1 - exp(((-B212*c212^xl)/log(c212))*(c212-1))
+yduga213 <- 1 - exp(((-B213*c213^xl)/log(c213))*(c213-1))
+yduga214 <- 1 - exp(((-B214*c214^xl)/log(c214))*(c214-1))
+```
+
+#### Nilai MSE 
+```{r}
+k1 <- 2
+mse211 <- sum(wt1*((datal$qx - yduga211)^2)) / (n - k1)
+mse212 <- sum(wt2*((datal$qx - yduga212)^2)) / (n - k1)
+mse213 <- sum(wt3*((datal$qx - yduga213)^2)) / (n - k1)
+mse214 <- sum(wt4*((datal$qx - yduga214)^2)) / (n - k1)
+
+cat("MSE Bobot 1:", mse211, "\n")
+cat("MSE Bobot 2:", mse212, "\n")
+cat("MSE Bobot 3:", mse213, "\n")
+cat("MSE Bobot 4:", mse214, "\n")
+```
+
+```{r echo=FALSE}
+df3 <- data.frame(Index = 1:length(datal$qx), 
+                  qx_Obs = datal$qx, 
+                  qx_Estimasi = yduga211)
+
+ggplot(df3, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Laki-laki Gompertz WLS Bobot 1",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+
+df4 <- data.frame(Index = 1:length(datal$qx), 
+                  qx_Obs = datal$qx, 
+                  qx_Estimasi = yduga212)
+
+ggplot(df4, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Laki-laki Gompertz WLS Bobot 2",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+
+df5 <- data.frame(Index = 1:length(datal$qx), 
+                  qx_Obs = datal$qx, 
+                  qx_Estimasi = yduga213)
+
+ggplot(df5, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Laki-laki Gompertz WLS Bobot 3",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+
+df6 <- data.frame(Index = 1:length(datal$qx), 
+                  qx_Obs = datal$qx, 
+                  qx_Estimasi = yduga214)
+
+ggplot(df6, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Laki-laki Gompertz WLS Bobot 4",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+```
+
+###  2. Perempuan
+```{r warning=FALSE}
+hasil221 <- secant_method2(pxp, xp, B0 = 0.02, B1 =0.03, C0 = 1.02, C1 = 1.05, w = wt1)
+hasil222 <- secant_method2(pxp, xp, B0 = 0.03, B1 =0.01, C0 = 1.09, C1 = 1.02, w = wt2)
+hasil223 <- secant_method2(pxp, xp, B0 = 0.04, B1 =0.01, C0 = 1.05, C1 = 1.03, w = wt3)
+hasil224 <- secant_method2(pxp, xp, B0 = 0.01, B1 =0.03, C0 = 1.02, C1 = 1.03, w = wt4)
+```
+
+```{r}
+print(hasil221)
+print(hasil222)
+print(hasil223)
+print(hasil224)
+```
+
+```{r}
+B221 <- hasil221$B
+c221 <- hasil221$C
+
+B222 <- hasil222$B
+c222 <- hasil222$C
+
+B223 <- hasil223$B
+c223 <- hasil223$C
+
+B224 <- hasil224$B
+c224 <- hasil224$C
+```
+
+```{r}
+yduga221 <- 1 - exp(((-B221*c221^xp)/log(c221))*(c221-1))
+yduga222 <- 1 - exp(((-B222*c222^xp)/log(c222))*(c222-1))
+yduga223 <- 1 - exp(((-B223*c223^xp)/log(c223))*(c223-1))
+yduga224 <- 1 - exp(((-B224*c224^xp)/log(c224))*(c224-1))
+```
+
+#### Nilai MSE 
+```{r}
+mse221 <- sum(wt1*((datap$qx - yduga221)^2)) / (n - k1)
+mse222 <- sum(wt2*((datap$qx - yduga222)^2)) / (n - k1)
+mse223 <- sum(wt3*((datap$qx - yduga223)^2)) / (n - k1)
+mse224 <- sum(wt4*((datap$qx - yduga224)^2)) / (n - k1)
+cat("MSE Bobot 1:", mse221, "\n")
+cat("MSE Bobot 2:", mse222, "\n")
+cat("MSE Bobot 3:", mse223, "\n")
+cat("MSE Bobot 4:", mse224, "\n")
+```
+
+```{r echo=FALSE}
+df7 <- data.frame(Index = 1:length(datap$qx), 
+                  qx_Obs = datap$qx, 
+                  qx_Estimasi = yduga221)
+
+ggplot(df7, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Perempuan Gompertz WLS Bobot 1",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+
+df8 <- data.frame(Index = 1:length(datap$qx), 
+                  qx_Obs = datap$qx, 
+                  qx_Estimasi = yduga222)
+
+ggplot(df8, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Perempuan Gompertz WLS Bobot 2",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+
+df9 <- data.frame(Index = 1:length(datap$qx), 
+                  qx_Obs = datap$qx, 
+                  qx_Estimasi = yduga223)
+
+ggplot(df9, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Perempuan Gompertz WLS Bobot 3",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+
+df10 <- data.frame(Index = 1:length(datap$qx), 
+                  qx_Obs = datap$qx, 
+                  qx_Estimasi = yduga224)
+
+ggplot(df10, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Perempuan Gompertz WLS Bobot 4",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+```
+
+## **Iterasi Metode Makeham OLS dengan Metode Secant**
+```{r}
+S_function3 <- function(A, B, C, x) {
+  exp(-A - (B * C^x / log(C)) * (C - 1))
+}
+```
+
+```{r}
+F31 <- function(A, B, C, Y, x) {
+  S <- S_function3(A, B, C, x)
+  sum(2 * (Y - S) * S)
+}
+```
+
+```{r}
+F32 <- function(A, B, C, Y, x) {
+  S <- S_function3(A, B, C, x)
+  sum(2 * (Y - S) * (C^x * (C - 1) / log(C)) * S)
+}
+```
+
+```{r}
+F33 <- function(A, B, C, Y, x) {
+  S <- S_function3(A, B, C, x)
+  sum(2 * (Y - S) * (B * C^(x-1) * ((x + C) * log(C) - (C - 1)) / (log(C)^2)) * S)
+}
+```
+
+```{r}
+secant_method3 <- function(Y, x, A0, B0, C0, A1, B1, C1, tol = 1e-5, max_iter = 1000) {
+  iter <- 0
+  
+  while (iter < max_iter) {
+    # Hitung nilai fungsi untuk iterasi sekarang
+    F1_1 <- F31(A1, B1, C1, Y, x)  
+    F2_1 <- F32(A1, B1, C1, Y, x)  
+    F3_1 <- F33(A1, B1, C1, Y, x)  
+    
+    # Hitung nilai fungsi untuk iterasi sebelumnya
+    F1_0 <- F31(A0, B0, C0, Y, x)  
+    F2_0 <- F32(A0, B0, C0, Y, x)  
+    F3_0 <- F33(A0, B0, C0, Y, x)
+    
+    # Cek apakah hasil fungsi valid
+    if (is.nan(F1_1) || is.nan(F2_1) || is.nan(F3_1) ||
+        is.infinite(F1_1) || is.infinite(F2_1) || is.infinite(F3_1)) {
+      warning("Fungsi menghasilkan NaN atau Inf. Coba nilai awal lain.")
+      return(NULL)
+    }
+    
+    # Cek apakah denominator nol
+    if ((F1_1 - F1_0) == 0 || (F2_1 - F2_0) == 0 || (F3_1 - F3_0) == 0) {
+      warning("Denominator nol, coba nilai awal lain.")
+      return(NULL)
+    }
+    
+    # Perbarui nilai A, B, dan C menggunakan metode secant
+    A_new <- A1 - (A1 - A0) / (F1_1 - F1_0) * F1_1
+    B_new <- B1 - (B1 - B0) / (F2_1 - F2_0) * F2_1
+    C_new <- C1 - (C1 - C0) / (F3_1 - F3_0) * F3_1
+    
+    # Cek konvergensi
+    if (abs(A_new - A1) < tol && abs(B_new - B1) < tol && abs(C_new - C1) < tol) {
+      cat("Konvergen: A =", A_new, ", B =", B_new, ", C =", C_new, "\n")
+      return(list(A = A_new, B = B_new, C = C_new, iter = iter))
+    }
+    
+    # Perbarui nilai lama dan lanjutkan iterasi
+    A0 <- A1
+    B0 <- B1
+    C0 <- C1
+    A1 <- A_new
+    B1 <- B_new
+    C1 <- C_new
+    
+    iter <- iter + 1
+  }
+  
+  warning("Tidak ditemukan solusi yang valid setelah", max_iter, "iterasi.")
+  return(NULL)
+}
+```
+
+```{r}
+tracking2 <- function(Y, x, A0, B0, C0, A1, B1, C1, tol = 1e-5, max_iter = 1000) {
+  iter <- 0
+  history <- data.frame(iter = integer(), A = numeric(), B = numeric(), C = numeric(), MSE = numeric(), 
+                        abs_dA = numeric(), abs_dB = numeric(), abs_dC = numeric())
+  
+  while (iter < max_iter) {
+    # Evaluasi fungsi
+    F1_1 <- F31(A1, B1, C1, Y, x)
+    F2_1 <- F32(A1, B1, C1, Y, x)
+    F3_1 <- F33(A1, B1, C1, Y, x)
+    
+    F1_0 <- F31(A0, B0, C0, Y, x)
+    F2_0 <- F32(A0, B0, C0, Y, x)
+    F3_0 <- F33(A0, B0, C0, Y, x)
+    
+    # Periksa validitas nilai fungsi
+    if (any(is.nan(c(F1_1, F2_1, F3_1))) || any(is.infinite(c(F1_1, F2_1, F3_1)))) {
+      warning("Fungsi menghasilkan NaN atau Inf. Coba nilai awal lain.")
+      return(NULL)
+    }
+    
+    # Hindari pembagian dengan nol
+    if ((F1_1 - F1_0) == 0 || (F2_1 - F2_0) == 0 || (F3_1 - F3_0) == 0) {
+      warning("Denominator nol, coba nilai awal lain.")
+      return(NULL)
+    }
+    
+    # Update nilai A, B, dan C
+    A_new <- A1 - (A1 - A0) / (F1_1 - F1_0) * F1_1
+    B_new <- B1 - (B1 - B0) / (F2_1 - F2_0) * F2_1
+    C_new <- C1 - (C1 - C0) / (F3_1 - F3_0) * F3_1
+    
+    # Hitung estimasi yduga dan MSE
+    yduga <- 1 - exp(-A_new - ((B_new * C_new^x) / log(C_new)) * (C_new - 1))
+    mse <- sum((datal$qx - yduga)^2) / length(datal$qx)
+    
+    # Hitung selisih absolut antara iterasi sebelumnya dan saat ini
+    abs_dA <- abs(A_new - A1)
+    abs_dB <- abs(B_new - B1)
+    abs_dC <- abs(C_new - C1)
+    
+    # Simpan hasil iterasi ke dalam dataframe
+    history <- rbind(history, data.frame(iter = iter, A = A_new, B = B_new, C = C_new, MSE = mse,
+                                         abs_dA = abs_dA, abs_dB = abs_dB, abs_dC = abs_dC))
+    
+    # Periksa konvergensi
+    if (abs_dA < tol && abs_dB < tol && abs_dC < tol) {
+      cat("Konvergen pada iterasi ke-", iter, "\n")
+      return(history)
+    }
+    
+    # Perbarui nilai untuk iterasi selanjutnya
+    A0 <- A1
+    B0 <- B1
+    C0 <- C1
+    A1 <- A_new
+    B1 <- B_new
+    C1 <- C_new
+    
+    iter <- iter + 1
+  }
+  
+  warning("Tidak ditemukan solusi yang valid setelah", max_iter, "iterasi.")
+  return(history)
+}
+```
+
+###  1. Laki-laki
+```{r}
+hasil31 <- secant_method3(pxl, xl, A0 = 0.001, B0 = 0.00001, C0 = 1.075, A1 = 0.001, B1 = 0.00051, C1 = 1.085)
+```
+
+```{r}
+print(hasil31)
+
+A31 <- hasil31$A
+B31 <- hasil31$B
+c31 <- hasil31$C
+```
+
+```{r}
+yduga31 <- 1 - exp(-A31-((B31*c31^xl)/log(c31))*(c31-1))
+```
+
+#### Nilai MSE 
+```{r}
+mse31 <- sum((datal$qx - yduga31)^2) / length(datal$qx)
+cat("Mean Squared Error (MSE):", mse31, "\n")
+```
+
+```{r}
+history_df3 <- tracking2(pxl, xl, A0 = 0.001, B0 = 0.00001, C0 = 1.075, A1 = 0.001, B1 = 0.00051, C1 = 1.085)
+
+head(history_df3)
+tail(history_df3)
+```
+
+```{r echo=FALSE}
+df11 <- data.frame(Index = 1:length(datal$qx), 
+                 qx_Obs = datal$qx, 
+                 qx_Estimasi = yduga31)
+
+ggplot(df11, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Makeham OLS Laki-laki",
+       x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+```
+
+###  2. Perempuan
+```{r}
+hasil32 <- secant_method3(pxp, xp, A0 = 0.001, B0 = 0.0001, C0 = 1.08, A1 = 0.001, B1 = 0.0001, C1 = 1.105)
+```
+
+```{r}
+print(hasil32)
+
+A32 <- hasil32$A
+B32 <- hasil32$B
+c32 <- hasil32$C
+```
+
+```{r}
+yduga32 <- 1 - exp(-A32-((B32*c32^xl)/log(c32))*(c32-1))
+```
+
+#### Nilai MSE 
+```{r}
+mse32 <- sum((datap$qx - yduga32)^2) / length(datap$qx)
+cat("Mean Squared Error (MSE):", mse32, "\n")
+```
+
+```{r}
+history_df4 <- tracking2(pxp, xp, A0 = 0.001, B0 = 0.0001, C0 = 1.08, A1 = 0.001, B1 = 0.0001, C1 = 1.105)
+
+print(history_df4)
+```
+
+```{r echo=FALSE}
+df12 <- data.frame(Index = 1:length(datap$qx), 
+                  qx_Obs = datap$qx, 
+                  qx_Estimasi = yduga32)
+
+ggplot(df12, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Makeham OLS Perempuan",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+```
+
+## **Iterasi Metode Makeham WLS dengan Metode Secant**
+```{r}
+S_function4 <- function(A, B, C, x) {
+  exp(-A - (B * C^x / log(C)) * (C - 1))
+}
+```
+
+```{r}
+F41 <- function(A, B, C, Y, x, w) {
+  S <- S_function4(A, B, C, x)
+  sum(2 * w * (Y - S) * S)
+}
+```
+
+```{r}
+F42 <- function(A, B, C, Y, x, w) {
+  S <- S_function4(A, B, C, x)
+  sum(2 * w * (Y - S) * (C^x * (C - 1) / log(C)) * S)
+}
+```
+
+```{r}
+F43 <- function(A, B, C, Y, x, w) {
+  S <- S_function4(A, B, C, x)
+  sum(2 * w * (Y - S) * (-B * C^(x-1) * ((C-1) + (x + C) * log(C)) / (log(C)^2)) * S)
+}
+```
+
+```{r}
+secant_method4 <- function(Y, x, A0, B0, C0, A1, B1, C1, w, tol = 1e-5, max_iter = 1000) {
+  iter <- 0
+  
+  while (iter < max_iter) {
+    # Hitung nilai fungsi untuk iterasi sekarang
+    F1_1 <- F41(A1, B1, C1, Y, x, w)
+    F2_1 <- F42(A1, B1, C1, Y, x, w)
+    F3_1 <- F43(A1, B1, C1, Y, x, w)
+    
+    # Hitung nilai fungsi untuk iterasi sebelumnya
+    F1_0 <- F41(A0, B0, C0, Y, x, w)
+    F2_0 <- F42(A0, B0, C0, Y, x, w)
+    F3_0 <- F43(A0, B0, C0, Y, x, w)
+    
+    # Cek apakah hasil fungsi valid
+    if (is.nan(F1_1) || is.nan(F2_1) || is.nan(F3_1) ||
+        is.infinite(F1_1) || is.infinite(F2_1) || is.infinite(F3_1)) {
+      warning("Fungsi menghasilkan NaN atau Inf. Coba nilai awal lain.")
+      return(NULL)
+    }
+    
+    # Cek apakah denominator nol
+    if ((F1_1 - F1_0) == 0 || (F2_1 - F2_0) == 0 || (F3_1 - F3_0) == 0) {
+      warning("Denominator nol, coba nilai awal lain.")
+      return(NULL)
+    }
+    
+    # Perbarui nilai A, B, dan C menggunakan metode secant
+    A_new <- A1 - (A1 - A0) / (F1_1 - F1_0) * F1_1
+    B_new <- B1 - (B1 - B0) / (F2_1 - F2_0) * F2_1
+    C_new <- C1 - (C1 - C0) / (F3_1 - F3_0) * F3_1
+    
+    # Cek konvergensi
+    if (abs(A_new - A1) < tol && abs(B_new - B1) < tol && abs(C_new - C1) < tol) {
+      cat("Konvergen: A =", A_new, ", B =", B_new, ", C =", C_new, "\n")
+      return(list(A = A_new, B = B_new, C = C_new, iter = iter))
+    }
+    
+    # Perbarui nilai lama dan lanjutkan iterasi
+    A0 <- A1
+    B0 <- B1
+    C0 <- C1
+    A1 <- A_new
+    B1 <- B_new
+    C1 <- C_new
+    
+    iter <- iter + 1
+  }
+  
+  warning("Tidak ditemukan solusi yang valid setelah", max_iter, "iterasi.")
+  return(NULL)
+}
+```
+
+###  1. Laki-laki
+```{r}
+hasil411 <- secant_method4(pxl, xl, A0 = 0.001, B0 = 0.00051, C0 = 1.085, A1 = 0.001, B1 = 0.00001, C1 = 1.075, w = wt1)
+hasil412 <- secant_method4(pxl, xl, A0 = 0.001, B0 = 0.00051, C0 = 1.085, A1 = 0.001, B1 = 0.00001, C1 = 1.075, w = wt2)
+hasil413 <- secant_method4(pxl, xl, A0 = 0.001, B0 = 0.00051, C0 = 1.085, A1 = 0.001, B1 = 0.00001, C1 = 1.075, w = wt3)
+hasil414 <- secant_method4(pxl, xl, A0 = 0.001, B0 = 0.00051, C0 = 1.095, A1 = 0.001, B1 = 0.00001, C1 = 1.075, w = wt4)
+```
+
+```{r}
+print(hasil411)
+print(hasil412)
+print(hasil413)
+print(hasil414)
+```
+
+```{r}
+A411 <- hasil411$A
+B411 <- hasil411$B
+c411 <- hasil411$C
+
+A412 <- hasil412$A
+B412 <- hasil412$B
+c412 <- hasil412$C
+
+A413 <- hasil413$A
+B413 <- hasil413$B
+c413 <- hasil413$C
+
+A414 <- hasil414$A
+B414 <- hasil414$B
+c414 <- hasil414$C
+```
+
+```{r}
+yduga411 <- 1 - exp(-A411-((B411*c411^xl)/log(c411))*(c411-1))
+yduga412 <- 1 - exp(-A412-((B412*c412^xl)/log(c412))*(c412-1))
+yduga413 <- 1 - exp(-A413-((B413*c413^xl)/log(c413))*(c413-1))
+yduga414 <- 1 - exp(-A414-((B414*c414^xl)/log(c414))*(c414-1))
+```
+
+#### Nilai MSE 
+```{r}
+k2 <- 3
+mse411 <- sum(wt1*((datal$qx - yduga411)^2)) / (n - k2)
+mse412 <- sum(wt2*((datal$qx - yduga412)^2)) / (n - k2)
+mse413 <- sum(wt3*((datal$qx - yduga413)^2)) / (n - k2)
+mse414 <- sum(wt4*((datal$qx - yduga414)^2)) / (n - k2)
+cat("MSE Bobot 1:", mse411, "\n")
+cat("MSE Bobot 2:", mse412, "\n")
+cat("MSE Bobot 3:", mse413, "\n")
+cat("MSE Bobot 4:", mse414, "\n")
+```
+
+```{r echo=FALSE}
+df13 <- data.frame(Index = 1:length(datal$qx), 
+                  qx_Obs = datal$qx, 
+                  qx_Estimasi = yduga411)
+
+ggplot(df13, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Laki-laki Makeham WLS Bobot 1",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+
+df14 <- data.frame(Index = 1:length(datal$qx), 
+                  qx_Obs = datal$qx, 
+                  qx_Estimasi = yduga412)
+
+ggplot(df14, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Laki-laki Makeham WLS Bobot 2",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+
+df15 <- data.frame(Index = 1:length(datal$qx), 
+                  qx_Obs = datal$qx, 
+                  qx_Estimasi = yduga413)
+
+ggplot(df15, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Laki-laki Makeham WLS Bobot 3",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+
+df16 <- data.frame(Index = 1:length(datal$qx), 
+                  qx_Obs = datal$qx, 
+                  qx_Estimasi = yduga414)
+
+ggplot(df16, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Laki-laki Makeham WLS Bobot 4",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+```
+
+###  2. Perempuan
+```{r}
+hasil421 <- secant_method4(pxp, xp, A0 = 0.001, B0 = 0.0001, C0 = 1.085, A1 = 0.001, B1 = 0.0001, C1 = 1.115, w = wt1)
+hasil422 <- secant_method4(pxp, xp, A0 = 0.001, B0 = 0.0001, C0 = 1.085, A1 = 0.001, B1 = 0.0001, C1 = 1.115, w = wt2)
+hasil423 <- secant_method4(pxp, xp, A0 = 0.001, B0 = 0.0001, C0 = 1.085, A1 = 0.001, B1 = 0.0001, C1 = 1.115, w = wt3)
+hasil424 <- secant_method4(pxp, xp, A0 = 0.001, B0 = 0.0001, C0 = 1.085, A1 = 0.001, B1 = 0.0001, C1 = 1.095, w = wt4)
+```
+
+```{r}
+print(hasil421)
+print(hasil422)
+print(hasil423)
+print(hasil424)
+```
+
+```{r}
+A421 <- hasil421$A
+B421 <- hasil421$B
+c421 <- hasil421$C
+
+A422 <- hasil422$A
+B422 <- hasil422$B
+c422 <- hasil422$C
+
+A423 <- hasil423$A
+B423 <- hasil423$B
+c423 <- hasil423$C
+
+A424 <- hasil424$A
+B424 <- hasil424$B
+c424 <- hasil424$C
+```
+
+```{r}
+yduga421 <- 1 - exp(-A421-((B421*c421^xp)/log(c421))*(c421-1))
+yduga422 <- 1 - exp(-A422-((B422*c422^xp)/log(c422))*(c422-1))
+yduga423 <- 1 - exp(-A423-((B423*c423^xp)/log(c423))*(c423-1))
+yduga424 <- 1 - exp(-A424-((B424*c424^xp)/log(c424))*(c424-1))
+```
+
+#### Nilai MSE 
+```{r}
+mse421 <- sum(wt1*((datap$qx - yduga421)^2)) / (n - k2)
+mse422 <- sum(wt2*((datap$qx - yduga422)^2)) / (n - k2)
+mse423 <- sum(wt3*((datap$qx - yduga423)^2)) / (n - k2)
+mse424 <- sum(wt4*((datap$qx - yduga424)^2)) / (n - k2)
+cat("MSE Bobot 1:", mse421, "\n")
+cat("MSE Bobot 2:", mse422, "\n")
+cat("MSE Bobot 3:", mse423, "\n")
+cat("MSE Bobot 4:", mse424, "\n")
+```
+
+```{r echo=FALSE}
+df17 <- data.frame(Index = 1:length(datap$qx), 
+                  qx_Obs = datap$qx, 
+                  qx_Estimasi = yduga421)
+
+ggplot(df17, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Perempuan Makeham WLS Bobot 1",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+
+df18 <- data.frame(Index = 1:length(datap$qx), 
+                  qx_Obs = datap$qx, 
+                  qx_Estimasi = yduga422)
+
+ggplot(df18, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Perempuan Makeham WLS Bobot 2",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+
+df19 <- data.frame(Index = 1:length(datap$qx), 
+                  qx_Obs = datap$qx, 
+                  qx_Estimasi = yduga423)
+
+ggplot(df19, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Perempuan Makeham WLS Bobot 3",
+  x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+
+df20 <- data.frame(Index = 1:length(datap$qx), 
+                  qx_Obs = datap$qx, 
+                  qx_Estimasi = yduga424)
+
+ggplot(df20, aes(x = Index)) +
+  geom_point(aes(y = qx_Obs, color = "qx TMI"), size = 2) +
+  geom_line(aes(y = qx_Estimasi, color = "qx Estimasi"), linewidth = 1) +
+  labs(title = "Perbandingan TMI dengan Estimasi", subtitle = "Perempuan Makeham WLS Bobot 4",
+       x = "Index", y = "Nilai qx") +
+  scale_color_manual(values = c("qx TMI" = "blue", "qx Estimasi" = "red")) +
+  theme_classic()
+```
+
+##### Rekap MSE Laki-laki
+```{r echo=FALSE}
+cat("MSE Gompertz OLS:", mse11, "\n")
+cat("MSE Gompertz WLS Bobot 1:", mse211, "\n")
+cat("MSE Gompertz WLS Bobot 2:", mse212, "\n")
+cat("MSE Gompertz WLS Bobot 3:", mse213, "\n")
+cat("MSE Gompertz WLS Bobot 4:", mse214, "\n")
+
+cat("MSE Makeham OLS:", mse31, "\n")
+cat("MSE Makeham WLS Bobot 1:", mse411, "\n")
+cat("MSE Makeham WLS Bobot 2:", mse412, "\n")
+cat("MSE Makeham WLS Bobot 3:", mse413, "\n")
+cat("MSE Makeham WLS Bobot 4:", mse414, "\n")
+```
+
+```{r}
+mse_valuesl <- c(mse11, mse211, mse212, mse213, mse214, 
+                mse31, mse411, mse412, mse413, mse414)
+
+mse_minl <- min(mse_valuesl)
+
+mse_namesl <- c("Gompertz OLS", "Gompertz WLS Bobot 1", "Gompertz WLS Bobot 2", "Gompertz WLS Bobot 3", "Gompertz WLS Bobot 4",
+               "Makeham OLS", "Makeham WLS Bobot 1", "Makeham WLS Bobot 2", "Makeham WLS Bobot 3", "Makeham WLS Bobot 4")
+
+mse_min_indexl <- which.min(mse_valuesl) 
+mse_min_namel <- mse_namesl[mse_min_indexl]  
+
+cat("MSE terkecil Laki-Laki:", mse_minl, "(", mse_min_namel, ")\n")
+```
+
+##### Rekap MSE Perempuan
+```{r echo=FALSE}
+cat("MSE Gompertz OLS:", mse12, "\n")
+cat("MSE Gompertz WLS Bobot 1:", mse221, "\n")
+cat("MSE Gompertz WLS Bobot 2:", mse222, "\n")
+cat("MSE Gompertz WLS Bobot 3:", mse223, "\n")
+cat("MSE Gompertz WLS Bobot 4:", mse224, "\n")
+
+cat("MSE Makeham OLS:", mse32, "\n")
+cat("MSE Makeham WLS Bobot 1:", mse421, "\n")
+cat("MSE Makeham WLS Bobot 2:", mse422, "\n")
+cat("MSE Makeham WLS Bobot 3:", mse423, "\n")
+cat("MSE Makeham WLS Bobot 4:", mse424, "\n")
+```
+
+```{r}
+mse_valuesp <- c(mse12, mse221, mse222, mse223, mse224, 
+                mse32, mse421, mse422, mse423, mse424)
+
+mse_minp <- min(mse_valuesp)
+
+mse_namesp <- c("Gompertz OLS", "Gompertz WLS Bobot 1", "Gompertz WLS Bobot 2", "Gompertz WLS Bobot 3", "Gompertz WLS Bobot 4",
+               "Makeham OLS", "Makeham WLS Bobot 1", "Makeham WLS Bobot 2", "Makeham WLS Bobot 3", "Makeham WLS Bobot 4")
+
+mse_min_indexp <- which.min(mse_valuesp) 
+mse_min_namep <- mse_namesp[mse_min_indexp]  
+
+cat("MSE terkecil Perempuan:", mse_minp, "(", mse_min_namep, ")\n")
+```
