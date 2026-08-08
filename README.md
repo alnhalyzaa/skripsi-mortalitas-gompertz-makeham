@@ -15,7 +15,7 @@ Data yang digunakan berasal dari **Tabel Mortalitas Indonesia IV tahun 2019**. E
 * Evaluasi: Mean Squared Error (MSE)
 * Software: R
 
-## 📊 Results
+## Results
 
 Berdasarkan nilai MSE, model terbaik diperoleh dari **hukum Makeham dengan Weighted Least Squares menggunakan bobot w₁**, dengan:
 
